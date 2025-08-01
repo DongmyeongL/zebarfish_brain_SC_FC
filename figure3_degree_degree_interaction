@@ -1,0 +1,170 @@
+import matplotlib.pyplot as plt
+import pickle
+import numpy as np
+import random
+from random import uniform
+from colorsys import hsv_to_rgb
+from scipy.stats import linregress
+from scipy.stats import lognorm, gaussian_kde, norm, kurtosis, skew, expon
+import seaborn as sns
+import scipy.stats as stats
+from scipy.spatial.distance import pdist, squareform
+import powerlaw 
+from scipy.stats import lognorm, gamma
+from scipy.optimize import curve_fit
+
+
+def analyze_distributions_with_plots(data, title ,xlim,figrue_axis):
+    
+    """
+    주어진 데이터의 Probability Density Function (PDF)을 log-log 스케일로 그리고,
+    log-normal, exponential, stretched exponential, gamma 분포를 피팅하여 시각화합니다.
+    CDF 플롯은 포함되지 않습니다.
+
+    Parameters:
+    - data (array-like): 입력 데이터 (양수만 포함)
+    - title (str): 플롯의 제목
+    """
+    data = np.array(data)
+    data = data[data > 0]  # Remove non-positive values
+    data.sort()  # Sort data (still good practice, even if not directly for CDF plot)
+
+
+   
+    hist_counts, hist_bins = np.histogram(data, bins='auto', density=True)
+    hist_centers = (hist_bins[:-1] + hist_bins[1:]) / 2
+    valid_hist_indices = (hist_centers > 0) & (hist_counts > 0)
+    hist_counts/=np.sum(hist_counts);
+    figrue_axis.plot(hist_centers[valid_hist_indices], hist_counts[valid_hist_indices], 'o', markersize=1, color='black', label='Empirical PDF (Histogram)')
+    figrue_axis.set_ylim((0.001, 0.02));
+    return 1,1
+   
+
+data = np.load('../raw_data/subject12_cellular_data.npz', allow_pickle=True)
+sel_neuron = data['sel_neuron']
+sc_mat = data['sc_mat']
+t_CellXYZ_data = data['t_CellXYZ_data']
+t_spot_data = data['t_spot_data']
+
+
+with open("../raw_data/subject12_cellular_data_sc_mat_indices.pkl", "rb") as f:
+    indices_ii = pickle.load(f)
+    
+regionLabels = ['MON', 'Cb', 'MOS1', 'MOS2', 'MOS3', 'MOS4', 'MOS5', 'IPN', 'IO', 'Hc', 'Ra', 'T', 'aRF', 'imRF', 'pRF', 'GG', 'Hb', 'Hi', 'Hr', 'OG', 'OB', 'OE', 'P', 'Pi', 'PT', 'PO', 'PrT', 'R', 'SP', 'TeO', 'Th', 'TL', 'TS', 'TG', 'VR', 'NX','rMON', 'rCb', 'rMOS1', 'rMOS2', 'rMOS3', 'rMOS4', 'rMOS5', 'rIPN', 'rIO', 'rHc', 'rRa', 'rT', 'raRF', 'rimRF', 'rpRF', 'rGG', 'rHb', 'rHi', 'rHr', 'rOG', 'rOB', 'rOE', 'rP', 'rPi', 'rPT', 'rPO', 'rPrT', 'rR', 'rSP', 'rTeO', 'rTh', 'rTL', 'rTS', 'rTG', 'rVR', 'rNX'];
+
+sort_id=np.load('../raw_data/subject_12_sort_id.npy');
+
+
+nn=len(indices_ii);
+x_data = []
+y_data = []
+
+for i in range(25):
+    pick_num_i = indices_ii[i]
+    sub_sc_i = sc_mat[np.ix_(pick_num_i, pick_num_i)]
+    i_degree = np.sum(sub_sc_i, axis=1)
+    max_i = np.max(i_degree)
+    
+    if max_i == 0:
+        continue
+
+    
+    i_degree_norm = i_degree / max_i  # shape: (len(pick_num_i),)
+
+    for j in range(nn):
+        if(i!=j ):
+            pick_num_j = indices_ii[j]
+            sub_sc_j = sc_mat[np.ix_(pick_num_j, pick_num_j)]
+            j_degree = np.sum(sub_sc_j, axis=1)
+            max_j = np.max(j_degree)
+            
+            if max_j == 0:
+                continue
+            
+            j_degree_norm = j_degree / max_j  # shape: (len(pick_num_j),)
+
+            # submatrix between region i and j
+            sc_ij = sc_mat[np.ix_(pick_num_i, pick_num_j)]
+
+            # 존재하는 연결 찾기
+            k_idx, l_idx = np.where(sc_ij > 0)
+
+            if len(k_idx) > 0:
+                x_data.extend(i_degree_norm[k_idx])
+                y_data.extend(j_degree_norm[l_idx])
+
+x_data=np.array(x_data);
+y_data=np.array(y_data);
+
+#plt.hexbin(x_data, y_data, gridsize=80, cmap='jet',bins='log')   
+#plt.colorbar();         
+
+mag=1.0;
+plt.rcParams['font.size'] = 6*mag
+plt.rcParams['font.family'] = 'Arial'
+fig = plt.figure(figsize=(7.09/4*mag, 4.66/3*mag), dpi=300)
+
+dd=0.75;
+hh1=0.85
+margin=0.05;
+axes=[];
+
+axes.append(fig.add_axes([margin+0.05,margin+0.05,dd,hh1]));
+#axes.append(fig.add_axes([margin+(margin+dd)*1,margin+0.05,dd,hh1]));
+#axes.append(fig.add_axes([margin+(margin+dd)*2,margin+0.05,dd,hh1]));
+#axes.append(fig.add_axes([margin+(margin+dd)*3,margin+0.05,dd,hh1]));
+
+total_points = len(x_data);
+weights = np.ones_like(x_data) / total_points;
+im1=axes[0].hexbin(x_data, y_data, C=weights, reduce_C_function=np.sum,gridsize=80, cmap='jet',vmin=0.0001, vmax=0.0005);
+
+axes[0].set_xticks([0.0,0.2,0.4,0.6,0.8,1.0]);
+axes[0].set_yticks([0.0,0.2,0.4,0.6,0.8,1.0]);
+   
+plt.colorbar(im1, ax=axes[0]);
+
+for i in range(1):
+    axes[i].tick_params(axis='x', pad=1, length=1)
+    axes[i].tick_params(axis='y', pad=1, length=1)
+    
+fig.savefig('./fig3.eps',format='eps',dpi=300,transparent=True);
+
+plt.show();
+
+
+
+
+aaaa;
+
+
+a=0.1;
+b=0.2;
+indices = np.where((x_data >= a) & (x_data <= b))[0]
+tt=y_data[indices];
+print(len(tt))
+t1,t2=analyze_distributions_with_plots(tt, 'degree-degree' ,[0.0001,1.0],axes[1]);
+
+a=0.6;
+b=0.7;
+indices = np.where((x_data >= a) & (x_data <= b))[0]
+tt=y_data[indices];
+print(len(tt))
+t1,t2=analyze_distributions_with_plots(tt, 'degree-degree' ,[0.0001,1.0],axes[2]);
+
+
+a=0.9;
+b=1.0;
+indices = np.where((x_data >= a) & (x_data <= b))[0]
+tt=y_data[indices];
+print(len(tt))
+t1,t2=analyze_distributions_with_plots(tt, 'degree-degree' ,[0.0001,1.0],axes[3]);
+
+
+
+for i in range(4):
+    axes[i].tick_params(axis='x', pad=1, length=1)
+    axes[i].tick_params(axis='y', pad=1, length=1)
+    
+fig.savefig('./fig3.eps',format='eps',dpi=300,transparent=True);
+
+plt.show();
